@@ -1,0 +1,74 @@
+version: '3'
+
+vars:
+  IMAGE_BASE: vox
+  TARGET: "develop"
+  PYSRV: "src"
+  UI: "ui"
+
+tasks:
+  default:
+    cmds:
+      - task --list --sort=alphanumeric
+    silent: true
+
+  dkb:
+    desc: "Builds the main image for a specific target. Usage: task dk:b:<target>"
+    cmds:
+      - docker build . -t {{.IMAGE_BASE}}:{{.TARGET}}
+    preconditions:
+      - sh: 'test -n "{{.TARGET}}"'
+        msg: "The 'target' variable must be provided. Usage: task dk.<target-name>"
+
+  dk:
+    desc: "Builds and runs the main image. Usage: task dk"
+    cmds:
+      - task: dkb
+      - docker run --rm -p 8992:8000 {{.IMAGE_BASE}}:{{.TARGET}}
+    preconditions:
+      - sh: 'test -n "{{.TARGET}}"'
+        msg: "The 'target' variable must be provided. Usage: task dk:r.<target-name>"
+
+  py:srv:*:
+    desc: "creates a service, handler, model file with dir in {{ .PYSRV }}"
+    dir: src
+    vars:
+      SERVICE_NAME: "{{index .MATCH 0}}"
+    cmds:
+      - coreutils mkdir -p
+      - coreutils touch
+
+  spec:
+    cmds:
+      - uv run -m src.openapi -o ./spec
+      - task: spec:generate
+
+  spec:generate:
+    dir: spec
+    vars:
+      TMP_GEN: "gen/dart"
+      IMG: "openapi-generator"
+      PACKAGE_NAME: "../ui/packages/voxcaster-generated-client"
+    cmds:
+      - coreutils rm -rf {{ .TMP_GEN }}
+      - docker run --rm 
+          -v ./:/local 
+          -v ./{{ .TMP_GEN }}:/output/dart/ 
+        openapitools/openapi-generator-cli generate 
+          -i /local/openapi.json 
+          -g dart-dio
+          -o /output/dart/
+
+      - coreutils mkdir -p {{ .PACKAGE_NAME }}
+      - coreutils rm -rf {{ .PACKAGE_NAME }}
+      - coreutils mv -f ./{{ .TMP_GEN }} {{ .PACKAGE_NAME }}
+      - task: spec:br
+
+  spec:br:
+    desc: "runs the build runner in the generated client"
+    vars:
+      PACKAGE_NAME: "ui/packages/voxcaster-generated-client"
+    dir: "{{ .PACKAGE_NAME }}"
+    cmds:
+      - flutter pub get
+      - dart run build_runner build

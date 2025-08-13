@@ -1,13 +1,7 @@
-from peewee import SqliteDatabase
+from peewee import SqliteDatabase, Model
 
 db = SqliteDatabase('vox.db')
 
-# Setting up database and creating tables
-def setup_database():
-    # Connect to database
-    db.connect()
-
-    # Create tables for all models
-    db.create_tables([])
-
-    print("Database and tables created successfully!")
+class BaseModel(Model):
+    class Meta:
+        database = db

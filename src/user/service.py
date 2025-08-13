@@ -4,19 +4,24 @@ from typing import Optional
 from peewee import Model, CharField, BooleanField
 import bcrypt
 
-from src import db
+from src.db import BaseModel
 
 
-class User(Model):
+class User(BaseModel):
     username = CharField(unique=True)
-    hashed_password = CharField(unique=True)
-    hashed_auth_token = CharField(unique=True)
-
-    class Meta:
-        database = db
+    hashed_password = CharField()
+    auth_token = CharField(unique=True)
 
 
-def create_user(username, password) -> (str, str):
+def save_user(user: User):
+    try:
+        user.save()
+        return None
+    except Exception as e:
+        return str(e)
+
+
+def create_user(username, password):
     try:
         hashed = hash_str(password)
         token = generate_auth_token()
@@ -25,36 +30,37 @@ def create_user(username, password) -> (str, str):
         User.create(
             username=username,
             hashed_password=hashed,
-            hashed_auth_token=hash_token,
+            auth_token=hash_token,
         )
-
-        return token, None
+        return None
     except Exception as e:
-        return None, str(e)
+        return str(e)
 
 
 def login_user(username: str, password: str) -> (str, str):
     try:
-        user = get_user_by_username(username)  # Returns user with stored hash
-        if not user:
+        user, err = get_user_by_username(username)
+        if err:
             return None, "Invalid username or password"
 
-        # Verify password against stored hash
-        if not verify_hash(password, user.password_hash):
+        if not verify_hash(password, user.hashed_password):
             return None, "Invalid username or password"
 
-        # Generate and store token
         token = generate_auth_token()
-        hash_token = hash_str(token)
+        user.auth_token = token
 
-        # Store hashed token in database for this user
-        verify_hash(user.id, hash_token)
+        err = save_user(user)
+        if err:
+            return None, err
 
         # Return plain token to user
         return token, None
-
     except Exception as e:
         return None, str(e)
+
+
+def verify_cookie(cookie: str):
+    return get_user_by_auth_token(cookie)
 
 
 def get_user_by_username(username) -> (User, str):
@@ -62,17 +68,17 @@ def get_user_by_username(username) -> (User, str):
         user: Optional[User] = User.get_or_none(User.username == username)
         if user is None:
             return None, "user not found"
-        return user, ""
+        return user, None
     except Exception as e:
         return None, str(e)
 
 
 def get_user_by_auth_token(token: str) -> (str, str):
     try:
-        user = User.get_or_none(User.hashed_auth_token == token)
-        return token, ""
+        user = User.get_or_none(User.auth_token == token)
+        return user
     except Exception as e:
-        return "", str(e)
+        return None
 
 
 def delete_user(user_id):
